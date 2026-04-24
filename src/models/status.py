@@ -14,7 +14,7 @@ class GPIN :
         self.status = GPIO.LOW # 当前电平
 
         # 配置硬件
-        GPIO.setmode(GPIO.BOard)# 设置引脚编号模式为物理引脚号
+        GPIO.setmode(GPIO.BOARD)# 设置引脚编号模式为物理引脚号
         GPIO.setwarnings(False)#关闭 GPIO 库的警告信息
 
         #模式判断
@@ -31,19 +31,19 @@ class GPIN :
         else:
             print(f"错误: 引脚 {self.pin} 是输入模式，无法设置值")
     #闪烁
+    #闪烁
     def flash(self):
-            times += 1
-            self.times = self.times % 10#让计数在 0-9 之间循环
+        self.times += 1
+        self.times = self.times % 10  # 让计数在 0-9 之间循环
 
-            #每当times==0时电平改变一次
-            if times == 0:
-                if self.status == GPIO.LOW:
-                      self.status = GPIO.HIGH
-                
-                elif self.status == GPIO.HIGH:
-                     self.status = GPIO.LOW
+        # 每当 self.times == 0 时电平改变一次
+        if self.times == 0:
+            if self.status == GPIO.LOW:
+                self.status = GPIO.HIGH
+            elif self.status == GPIO.HIGH:
+                self.status = GPIO.LOW
 
-            GPIO.output(self.pin, self.status)
+        GPIO.output(self.pin, self.status)
 
     def read_status(self):
          # 检查模式是否为1，如果是则返回错误
