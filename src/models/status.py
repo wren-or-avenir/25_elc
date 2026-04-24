@@ -31,7 +31,6 @@ class GPIN :
         else:
             print(f"错误: 引脚 {self.pin} 是输入模式，无法设置值")
     #闪烁
-    #闪烁
     def flash(self):
         self.times += 1
         self.times = self.times % 10  # 让计数在 0-9 之间循环
