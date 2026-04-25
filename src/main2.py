@@ -1,13 +1,13 @@
-import model.cam as Camera
-import model.detector as Detector
-import model.stepper as Stepper
-import model.tracker as Tracker
+import models.cam as Camera
+import models.detector as Detector
+import models.stepper as Stepper
+import models.tracker as Tracker
 import time
 import cv2
 #import Hobot.GPIO as GPIO
-#import model.status as GPIN
-import model.pid as pid
-from model.tracker import Tracker, Status
+#import models.status as GPIN
+import models.pid as pid
+from models.tracker import Tracker, Status
 
 #硬件全局实例化
 '''
