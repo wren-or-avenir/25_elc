@@ -4,18 +4,17 @@ import models.stepper as Stepper
 import models.tracker as Tracker
 import time
 import cv2
-import Hobot.GPIO as GPIO
-import model.status as GPIN
+# import Hobot.GPIO as GPIO
+# import model.status as GPIN
 import models.pid as pid
-from models.tracker import Tracker, Status
 
-cam = Camera.Camera(index = 4, width=640, height=480)
+cam = Camera.Camera(index = 2, width=640, height=480)
 detector = Detector.Detector(min_area=5000, max_area=500000)
 tracker = Tracker.Tracker(img_width=640, img_height=480, vfov=48.0, hfov =80.0, f_pixel_h=725.6, real_height=17.5, use_kf = True)
 stepper_yaw = Stepper.EmmMotor(port ='COM20', baudrate = 115200, timeout = 1, motor_id = 1)
 stepper_pitch = Stepper.EmmMotor(port ='COM7', baudrate = 115200, timeout = 1, motor_id = 2)
-heart_beat = GPIN.GPIN(pin=13, mode=1) #呼吸灯，用于表示主程序还在跑
-lazer = GPIN.GPIN(pin=16, mode=1)
+# heart_beat = GPIN.GPIN(pin=13, mode=1) #呼吸灯，用于表示主程序还在跑
+# lazer = GPIN.GPIN(pin=16, mode=1)
 pid_yaw = pid.PIDController(Kp = 5, Ki = 5, Kd = 5, dt = 1/30)
 pid_pitch = pid.PIDController(Kp = 5, Ki = 5, Kd = 5, dt = 1/30)
 
@@ -47,13 +46,13 @@ def update_params():
     #读原始值
     current_thresh = cv2.getTrackbarPos('Threshold', 'Controls')
 
-    yaw_kp = cv2.getTrackbarPos('yaw_kp', 'Controls')/100
-    yaw_ki = cv2.getTrackbarPos('yaw_ki', 'Controls')/10000
-    yaw_kd = cv2.getTrackbarPos('yaw_kd', 'Controls')/10000
+    yaw_kp = cv2.getTrackbarPos('yaw_kp', 'Controls')/1000
+    yaw_ki = cv2.getTrackbarPos('yaw_ki', 'Controls')/1000000
+    yaw_kd = cv2.getTrackbarPos('yaw_kd', 'Controls')/1000000
 
-    pitch_kp = cv2.getTrackbarPos('pitch_kp', 'Controls')/100
-    pitch_ki = cv2.getTrackbarPos('pitch_ki', 'Controls')/10000
-    pitch_kd = cv2.getTrackbarPos('pitch_kd', 'Controls')/10000
+    pitch_kp = cv2.getTrackbarPos('pitch_kp', 'Controls')/1000
+    pitch_ki = cv2.getTrackbarPos('pitch_ki', 'Controls')/100000
+    pitch_kd = cv2.getTrackbarPos('pitch_kd', 'Controls')/100000
 
     vel_rpm = cv2.getTrackbarPos('vel_rpm', 'Controls')
     acc = cv2.getTrackbarPos('acc', 'Controls')
@@ -83,8 +82,8 @@ def main ():
 
     try:
         while True:
-            # 呼吸灯，证明主程序在运行(单线程中闪烁频率完全受制于主循环的运行速度)
-            heart_beat.flash()
+            # # 呼吸灯，证明主程序在运行(单线程中闪烁频率完全受制于主循环的运行速度)
+            # heart_beat.flash()
 
             #读帧
             ret, frame = cam.cam.read()
@@ -108,16 +107,16 @@ def main ():
             yaw, pitch, dist, status, laser_pos = res
 
             #激光开火判断
-            arrived = tracker.check_onfire(pitch, yaw)
-            if  arrived:
-                 lazer.set_value(0)
-            else:
-                lazer.set_value(1)
+            # arrived = tracker.check_onfire(pitch, yaw)
+            # if  arrived:
+            #      lazer.set_value(0)
+            # else:
+            #     lazer.set_value(1)
 
             # 打印状态和fps
-            if status == Status.TRACK:
+            if status == Tracker.Status.TRACK:
                 info = f"[TRACK] Yaw:{yaw:.2f} Pitch:{pitch:.2f} Dist:{dist:.1f}cm"
-            elif status == Status.TMP_LOST:
+            elif status == Tracker.Status.TMP_LOST:
                 info = f"[PREDICT] Predicting... Dist:{dist:.1f}cm"
             else:
                 info = "[LOST] Searching..."
@@ -146,7 +145,11 @@ def main ():
                 pid_yaw.reset()
                 pid_pitch.reset()
                 pass
-
+            
+            # 同步 raw 帧（供 display 使用）
+            detector.raw = frame
+            tracker.raw = frame
+            
             vis_det, bin_img = detector.display(dis=1)
             vis_trk = tracker.display(dis=1, laser_pos=laser_pos)
 
