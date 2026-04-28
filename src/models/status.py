@@ -1,6 +1,7 @@
 import Hobot.GPIO as GPIO
 import time
 
+_GPIO_MODE_SET = False
 
 class GPIN :
 
@@ -14,8 +15,10 @@ class GPIN :
         self.status = GPIO.LOW # 当前电平
 
         # 配置硬件
-        GPIO.setmode(GPIO.BOARD)# 设置引脚编号模式为物理引脚号
-        GPIO.setwarnings(False)#关闭 GPIO 库的警告信息
+        if not _GPIO_MODE_SET:#防止多次运行setmode而报错
+            GPIO.setmode(GPIO.BOARD)# 设置引脚编号模式为物理引脚号
+            GPIO.setwarnings(False)#关闭 GPIO 库的警告信息
+            _GPIO_MODE_SET = True
 
         #模式判断
         if self.mode == 1:
