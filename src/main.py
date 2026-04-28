@@ -4,8 +4,8 @@ import models.stepper as Stepper
 import models.tracker as Tracker
 import time
 import cv2
-# import Hobot.GPIO as GPIO
-# import models.status as GPIN
+import Hobot.GPIO as GPIO
+import models.status as GPIN
 import models.pid as pid
 
 cam = Camera.Camera(index = 2, width=640, height=480)
@@ -13,8 +13,8 @@ detector = Detector.Detector(min_area=5000, max_area=500000)
 tracker = Tracker.Tracker(img_width=640, img_height=480, vfov=48.0, hfov =80.0, f_pixel_h=725.6, real_height=17.5, use_kf = True)
 stepper_yaw = Stepper.EmmMotor(port ='COM20', baudrate = 115200, timeout = 1, motor_id = 1)
 stepper_pitch = Stepper.EmmMotor(port ='COM7', baudrate = 115200, timeout = 1, motor_id = 2)
-# heart_beat = GPIN.GPIN(pin=13, mode=1) #呼吸灯，用于表示主程序还在跑
-# lazer = GPIN.GPIN(pin=16, mode=1)
+heart_beat = GPIN.GPIN(pin=13, mode=1) #呼吸灯，用于表示主程序还在跑
+lazer = GPIN.GPIN(pin=16, mode=1)
 pid_yaw = pid.PIDController(Kp = 5, Ki = 5, Kd = 5, dt = 1/30)
 pid_pitch = pid.PIDController(Kp = 5, Ki = 5, Kd = 5, dt = 1/30)
 
@@ -83,7 +83,7 @@ def main ():
     try:
         while True:
             # # 呼吸灯，证明主程序在运行(单线程中闪烁频率完全受制于主循环的运行速度)
-            # heart_beat.flash()
+            heart_beat.flash()
 
             #读帧
             ret, frame = cam.cam.read()
@@ -107,11 +107,11 @@ def main ():
             yaw, pitch, dist, status, laser_pos = res
 
             #激光开火判断
-            # arrived = tracker.check_onfire(pitch, yaw)
-            # if  arrived:
-            #      lazer.set_value(0)
-            # else:
-            #     lazer.set_value(1)
+            arrived = tracker.check_onfire(pitch, yaw)
+            if  arrived:
+                lazer.set_value(0)
+            else:
+                lazer.set_value(1)
 
             # 打印状态和fps
             if status == Tracker.Status.TRACK:
@@ -176,6 +176,10 @@ def main ():
             stepper_pitch.close()
         except Exception as e:
             print(f" 电机关闭异常: {e}")
+        
+        #释放所有GPIO
+        GPIO.cleanup()
+
         cv2.destroyAllWindows()
         print(" 系统已安全关闭")
 

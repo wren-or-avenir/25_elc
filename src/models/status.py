@@ -46,6 +46,7 @@ class GPIN :
                 self.status = GPIO.LOW
 
         GPIO.output(self.pin, self.status)
+        
 
     def read_status(self):
          # 检查模式是否为1，如果是则返回错误
