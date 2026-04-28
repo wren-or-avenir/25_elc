@@ -5,7 +5,7 @@ import models.tracker as Tracker
 import time
 import cv2
 # import Hobot.GPIO as GPIO
-# import model.status as GPIN
+# import models.status as GPIN
 import models.pid as pid
 
 cam = Camera.Camera(index = 2, width=640, height=480)
