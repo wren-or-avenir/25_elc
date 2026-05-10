@@ -9,58 +9,74 @@ import Hobot.GPIO as GPIO
 import models.status as GPIN
 import models.pid as pid
 
-cam = Camera.Camera(index = 2, width=640, height=480)
+# ---------放在最前面：特别注意的接口和开关----------
+camera_index = 0        # 摄像头索引，需根据实际情况调整
+yaw_port = '/dev/ttyACM0'      # yaw轴电机串口
+pitch_port = '/dev/ttyACM1'     # pitch轴电机串口
+
+use_kf = True           # 是否启用卡尔曼滤波
+show_windows = True     # 是否显示调试窗口
+# ------------------------------------------------------------------------------
+
+cam = Camera.Camera(index = camera_index, width=640, height=480)
 detector = Detector.Detector(min_area=5000, max_area=500000)
-tracker = Tracker.Tracker(img_width=640, img_height=480, vfov=48.0, hfov =80.0, f_pixel_h=725.6, real_height=17.5, use_kf = True)
-stepper_yaw = Stepper.EmmMotor(port ='COM20', baudrate = 115200, timeout = 1, motor_id = 1)
-stepper_pitch = Stepper.EmmMotor(port ='COM7', baudrate = 115200, timeout = 1, motor_id = 2)
-heart_beat = GPIN.GPIN(pin=13, mode=1) #呼吸灯，用于表示主程序还在跑
-lazer = GPIN.GPIN(pin=16, mode=1)
+tracker = Tracker.Tracker(img_width=640, img_height=480, vfov=48.0, hfov =80.0, f_pixel_h=725.6, real_height=17.5, use_kf = use_kf)
+
+stepper_yaw = Stepper.EmmMotor(port = yaw_port, baudrate = 115200, timeout = 1, motor_id = 1)
+stepper_pitch = Stepper.EmmMotor(port = pitch_port, baudrate = 115200, timeout = 1, motor_id = 2)
 pid_yaw = pid.PIDController(Kp = 5, Ki = 5, Kd = 5, dt = 1/30)
 pid_pitch = pid.PIDController(Kp = 5, Ki = 5, Kd = 5, dt = 1/30)
+heart_beat = GPIN.GPIN(pin=13, mode=1) #呼吸灯，用于表示主程序还在跑
+lazer = GPIN.GPIN(pin=16, mode=1)
 
 def nothing(x):
     pass
 def init_board():
-    cv2.namedWindow('Result', cv2.WINDOW_FREERATIO)
-    cv2.moveWindow('Result', 540, 180)
-    cv2.namedWindow('Controls', cv2.WINDOW_FREERATIO)
-    cv2.moveWindow('Controls', 0, 0)
-    cv2.resizeWindow('Controls', 320, 500)
-    cv2.namedWindow('BIN', cv2.WINDOW_FREERATIO)
+    """初始化调试窗口和滑动条"""
+    cv2.namedWindow('Controls', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('Controls', 300, 150)
+    cv2.namedWindow('DETECTOR', cv2.WINDOW_FREERATIO)  
+    cv2.namedWindow('BIN', cv2.WINDOW_FREERATIO)      
 
-    cv2.createTrackbar('Threshold', 'Controls', 127, 255, nothing)
+    cv2.createTrackbar('system_delay', 'Controls', 21, 100, nothing)
 
-    cv2.createTrackbar('yaw_kp', 'Controls', 2, 100, nothing)   
-    cv2.createTrackbar('yaw_ki', 'Controls', 0, 100, nothing)   
-    cv2.createTrackbar('yaw_kd', 'Controls', 1, 100, nothing)  
+    cv2.createTrackbar('yaw_kp', 'Controls', 28, 100, nothing)   
+    cv2.createTrackbar('yaw_ki', 'Controls', 2, 100, nothing)   
+    cv2.createTrackbar('yaw_kd', 'Controls', 20, 100, nothing)
 
-    cv2.createTrackbar('pitch_kp', 'Controls', 2, 100, nothing)   
+    cv2.createTrackbar('yaw_sentry_speed', 'Controls', 45, 100, nothing)
+
+    cv2.createTrackbar('pitch_kp', 'Controls', 22, 100, nothing)   
     cv2.createTrackbar('pitch_ki', 'Controls', 0, 100, nothing)   
-    cv2.createTrackbar('pitch_kd', 'Controls', 1, 100, nothing)  
+    cv2.createTrackbar('pitch_kd', 'Controls', 16, 100, nothing)  
+
+    cv2.createTrackbar('onfire_tol', 'Controls', 5, 100, nothing) # 开火容忍度，单位为0.1度
 
     cv2.createTrackbar('vel_rpm', 'Controls', 3000, 5000, nothing)
     cv2.createTrackbar('acc', 'Controls', 100, 255, nothing)
     cv2.createTrackbar('show', 'Controls', 1, 1, nothing)
 
 def update_params():
-    #读原始值
-    current_thresh = cv2.getTrackbarPos('Threshold', 'Controls')
-
+    """回调获取滑块参数"""
+    system_delay = cv2.getTrackbarPos('system_delay', 'Controls')/10
     yaw_kp = cv2.getTrackbarPos('yaw_kp', 'Controls')/1000
-    yaw_ki = cv2.getTrackbarPos('yaw_ki', 'Controls')/1000000
-    yaw_kd = cv2.getTrackbarPos('yaw_kd', 'Controls')/1000000
+    yaw_ki = cv2.getTrackbarPos('yaw_ki', 'Controls')/10000
+    yaw_kd = cv2.getTrackbarPos('yaw_kd', 'Controls')/10000
+
+    yaw_sentry_speed = cv2.getTrackbarPos('yaw_sentry_speed', 'Controls')/10
 
     pitch_kp = cv2.getTrackbarPos('pitch_kp', 'Controls')/1000
-    pitch_ki = cv2.getTrackbarPos('pitch_ki', 'Controls')/100000
-    pitch_kd = cv2.getTrackbarPos('pitch_kd', 'Controls')/100000
+    pitch_ki = cv2.getTrackbarPos('pitch_ki', 'Controls')/10000
+    pitch_kd = cv2.getTrackbarPos('pitch_kd', 'Controls')/10000
+
+    onfire_tol = cv2.getTrackbarPos('onfire_tol', 'Controls')/10
 
     vel_rpm = cv2.getTrackbarPos('vel_rpm', 'Controls')
     acc = cv2.getTrackbarPos('acc', 'Controls')
-    
-    #赋值给模块
-    detector.threshold_value = current_thresh
 
+    tracker.onfire_tol = onfire_tol
+    tracker.system_delay = system_delay
+    #赋值给模块
     pid_yaw.set_Kp(yaw_kp)
     pid_yaw.set_Ki(yaw_ki)
     pid_yaw.set_Kd(yaw_kd)
@@ -69,8 +85,7 @@ def update_params():
     pid_pitch.set_Ki(pitch_ki)
     pid_pitch.set_Kd(pitch_kd)
 
-    #返回控制参
-    return vel_rpm, acc
+    return vel_rpm, acc, yaw_sentry_speed
 
 
 def main ():

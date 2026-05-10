@@ -10,7 +10,7 @@ class Board:
 
 class Detector:
     
-    def __init__(self, min_area=5000, max_area=500000):
+    def __init__(self, min_area=3000, max_area=500000):
         self.board_min_area = min_area
         self.board_max_area = max_area
         self.threshold_value = 127

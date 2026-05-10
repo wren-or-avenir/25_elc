@@ -3,7 +3,7 @@ import numpy as np
 from .Kalman import KalmanFilter
 import time
 from enum import IntEnum
-#from .dm_imu import imu 
+from .dm_imu import imu 
 import cv2
 
 # 追踪状态展示
@@ -25,18 +25,25 @@ class Tracker:
         self.kf_cx = KalmanFilter(q_scale=0.35, r_scale=0.1)    # cx 卡尔曼滤波器
         self.kf_cy = KalmanFilter(q_scale=0.35, r_scale=0.1)    # cy 卡尔曼滤波器
         self.kf_dist = KalmanFilter(q_scale=0.01, r_scale=2.0)  # distance 卡尔曼滤波器
+        self.system_delay = 0.03 # 系统延迟，单位为秒，初始值为30ms
+        self.last_cy_vel = 0.0
 
         self.lost_count = 0  # 丢帧数
         self.frame_lost_tol = 8   # 丢帧容忍度 
         self.last_time = None
 
         self.onfire = False # 开火状态，默认为关闭
-        self.onfire_tol = 3 # 开火容忍，单位为度
+        self.onfire_tol = 0.3 # 开火容忍，单位为度
 
         self.raw = None
-        # 物理偏移补偿 (单位: cm)
-        self.ref_point = np.array([0.0, 1.4, 0.0])      # 测量得出激光笔位于相机光轴上方1.4cm,视差补偿为 np.array([0.0, 1.4, 0.0])
+
         self.status = Status.LOST # 初始状态为 LOST
+
+        # 激光笔安装视差 (单位: cm)
+        self.ref_point = np.array([-0.15, 1.35, 0.0])      # 测量得出激光笔位于相机光轴上方1.4cm,视差补偿为 np.array([0.0, 1.4, 0.0])
+        # 激光笔发射角度和相机光轴角度偏差补偿 (单位: 度)，通过实测调整得到
+        self.yaw_bias = -2.3
+        self.pitch_bias = -0.2
 
     def time_diff(self):
         # 起到一个动态dt的作用
@@ -66,7 +73,7 @@ class Tracker:
 
     def filter(self, target):
         # 暂存变量
-        cx, cy, dist = 0, 0, 0.0
+        cx, cy, dist, = 0.0, 0.0, 0.0
         # 接口变量
         filtered_center = (0, 0)
         filtered_dist = 0.0
@@ -91,21 +98,30 @@ class Tracker:
                 pred_dist, _ = self.kf_dist.predict(dt)
                 # 更新
                 update_cx, _ = self.kf_cx.update(target.center[0])
-                update_cy, _ = self.kf_cy.update(target.center[1])
+                update_cy, self.last_cy_vel = self.kf_cy.update(target.center[1])
                 update_dist, _ = self.kf_dist.update(self.get_dist(target))
-                cx, cy, dist = update_cx, update_cy, update_dist
+
+                # 加上系统延时预测，用predict
+                if self.system_delay > 0:
+                    delay_pred_cx, _ = self.kf_cx.predict(self.system_delay)
+                    delay_pred_cy, _ = self.kf_cy.predict(self.system_delay)
+                    delay_pred_dist, _ = self.kf_dist.predict(self.system_delay)
+                    cx, cy, dist = delay_pred_cx, delay_pred_cy, delay_pred_dist
+                else:
+                    cx, cy, dist = update_cx, update_cy, update_dist
             else:
                 #丢帧，开始计数
                 self.lost_count += 1
                 if self.lost_count <= self.frame_lost_tol:
                     self.status = Status.TMP_LOST   # 状态调整
                      # 预测
-                    pred_cx, _ = self.kf_cx.predict(dt)
-                    pred_cy, _ = self.kf_cy.predict(dt)
-                    pred_dist, _ = self.kf_dist.predict(dt)
+                    pred_cx, _ = self.kf_cx.predict(dt + self.system_delay)
+                    pred_cy, self.last_cy_vel = self.kf_cy.predict(dt + self.system_delay)
+                    pred_dist, _ = self.kf_dist.predict(dt + self.system_delay)
                     cx, cy, dist = pred_cx, pred_cy, pred_dist
                 else:
                     self.status = Status.LOST   # 状态调整
+                    
                     # 丢帧过多，重置滤波器状态
                     self.kf_cx.reset()
                     self.kf_cy.reset()
@@ -135,8 +151,8 @@ class Tracker:
         offset_y = v - self.img_height / 2
 
         # 考虑视差补偿,目前视差补偿为0，后续如果装激光笔了再调整
-        dx = offset_x - (self.ref_point[0] * self.f_pixel_h / dist if dist != 0 else 0)
-        dy = offset_y - (self.ref_point[1] * self.f_pixel_h / dist if dist != 0 else 0)
+        dx = offset_x + (self.ref_point[0] * self.f_pixel_h / dist if dist != 0 else 0)
+        dy = offset_y + (self.ref_point[1] * self.f_pixel_h / dist if dist != 0 else 0)
 
         # 激光坐标
         laser_u = self.img_width / 2 + dx
@@ -146,6 +162,10 @@ class Tracker:
         yaw = -math.degrees(math.atan2(dx, self.f_pixel_h))
         # Pitch: 向下为正
         pitch = math.degrees(math.atan2(dy, self.f_pixel_h))
+
+        # 补偿固定角度偏差
+        yaw += self.yaw_bias
+        pitch += self.pitch_bias
 
         return yaw, pitch, dist, (int(laser_u), int(laser_v))
     
@@ -162,10 +182,9 @@ class Tracker:
         if board is not None and board.center is not None:
             filtered_center, filtered_dist = self.filter(board)
             if self.status != Status.LOST:
-                rel_yaw, rel_pitch, dist, laser_pos = self.solve(filtered_center, filtered_dist)
-                self.onfire = self.check_onfire(rel_pitch, rel_yaw)
-                # yaw, pitch = imu.get_abs(rel_yaw, rel_pitch)
-                yaw, pitch = rel_yaw, rel_pitch  # ✅ 暂时绕过 IMU，直接使用视觉解算角度
+                yaw, pitch, dist, laser_pos = self.solve(filtered_center, filtered_dist)
+                self.onfire = self.check_onfire(pitch, yaw)
+                yaw, pitch = imu.get_abs(yaw, pitch)
                 self.laser_pos = laser_pos
                 return yaw, pitch, dist, self.status, laser_pos
             else:
